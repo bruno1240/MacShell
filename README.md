@@ -13,7 +13,11 @@ Visual inspirado no macOS para o Windows 11 — leve, nativo e feito do zero em 
 
 **Barra superior**
 - Translúcida (acrílico), com o app em foco, menus de app e de janela, busca, configurações rápidas e relógio.
+- Botão ⌃ que abre os ícones ocultos (Steam, Discord, OneDrive...) logo abaixo dele, no topo da tela.
 - Some apenas em tela cheia de verdade (jogos, vídeos, F11).
+
+**Avisos nunca escondidos**
+- Programa piscando pedindo atenção ou pedido de administrador pendente: a barra de tarefas aparece, o dock sobe acima dela e o ícone do app fica pulando até o pedido ser atendido.
 
 **Animação gênio**
 - Ao minimizar, a janela escorre para dentro do ícone do dock; ao restaurar pelo dock, sai dele.

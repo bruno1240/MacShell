@@ -42,6 +42,9 @@
             <Button x:Name="SoundBtn" DockPanel.Dock="Right" Style="{StaticResource BarButton}" ToolTip="Som">
                 <TextBlock FontFamily="{StaticResource IconFont}" FontSize="15" Text="&#xE767;"/>
             </Button>
+            <Button x:Name="TrayBtn" DockPanel.Dock="Right" Style="{StaticResource BarButton}" ToolTip="Programas em segundo plano (ícones ocultos)">
+                <TextBlock FontFamily="{StaticResource IconFont}" FontSize="12" Text="&#xE70E;"/>
+            </Button>
             <Button x:Name="BatteryBtn" DockPanel.Dock="Right" Style="{StaticResource BarButton}" Visibility="Collapsed">
                 <StackPanel Orientation="Horizontal">
                     <TextBlock x:Name="BatteryText" Margin="0,0,5,0" FontSize="12" VerticalAlignment="Center"/>

@@ -38,6 +38,7 @@ public partial class TopBarWindow : Window
         ClockBtn.Click += (_, _) => Native.SendKeys(Native.VK_LWIN, 0x4E /* N */);
         AppBtn.Click += (_, _) => ShowAppMenu();
         WindowBtn.Click += (_, _) => ShowWindowMenu();
+        TrayBtn.Click += async (_, _) => await OpenHiddenIcons();
 
         _clock.Tick += (_, _) => UpdateClock();
         NetworkChange.NetworkAddressChanged += (_, _) => Dispatcher.BeginInvoke(UpdateNetwork);
@@ -193,6 +194,40 @@ public partial class TopBarWindow : Window
         _activePath = path;
         AppName.Text = name;
         Relayout();
+    }
+
+    // ------------------------------------------------------------ ícones ocultos (a setinha ^ da barra de tarefas)
+    /// <summary>
+    /// Abre a mesma janela da setinha da barra de tarefas (Steam, Discord, OneDrive...): mostra a barra,
+    /// usa o atalho do próprio Windows (Win+B foca a setinha, Enter abre) e tenta trazer a janela para
+    /// perto do botão, no topo da tela.
+    /// </summary>
+    async Task OpenHiddenIcons()
+    {
+        TaskbarController.Peek();
+        await Task.Delay(120);
+        Native.SendKeys(Native.VK_LWIN, 0x42 /* B */);
+        await Task.Delay(200);
+        Native.SendKeys(0x0D /* Enter */);
+
+        // espera a janela aparecer e a posiciona logo abaixo do botão
+        for (int i = 0; i < 20; i++)
+        {
+            await Task.Delay(40);
+            IntPtr flyout = Native.FindWindow("TopLevelWindowForOverflowXamlIsland", null);
+            if (flyout == IntPtr.Zero || !Native.IsWindowVisible(flyout)) flyout = Native.FindWindow("NotifyIconOverflowWindow", null);
+            if (flyout == IntPtr.Zero || !Native.IsWindowVisible(flyout)) continue;
+            if (!Native.GetWindowRect(flyout, out var r)) break;
+            double dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX;
+            var p = TrayBtn.PointToScreen(new Point(TrayBtn.ActualWidth / 2, TrayBtn.ActualHeight));
+            int w = r.Right - r.Left;
+            int x = Math.Min((int)p.X - w / 2, Native.GetSystemMetrics(0) - w - 8);
+            Native.SetWindowPos(flyout, IntPtr.Zero, Math.Max(8, x), (int)(p.Y + 6 * dpi), 0, 0, Native.SWP_NOSIZE | Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+            await Task.Delay(30);
+            TaskbarController.EndPeek(); // o painel fica no topo; a barra de tarefas some de novo
+            return;
+        }
+        TaskbarController.EndPeek();
     }
 
     // ------------------------------------------------------------ menus

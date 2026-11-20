@@ -40,6 +40,22 @@ internal static class TaskbarController
         SetVisible(true);
     }
 
+    /// <summary>Mostra a barra de tarefas até o foco sair dela (usado pelo botão de ícones ocultos).</summary>
+    public static void Peek()
+    {
+        if (!Enabled) return;
+        _shown = true;
+        SetVisible(true);
+    }
+
+    /// <summary>Esconde de novo depois de um <see cref="Peek"/> (o painel aberto continua aberto).</summary>
+    public static void EndPeek()
+    {
+        if (!Enabled) return;
+        _shown = false;
+        SetVisible(_attention);
+    }
+
     /// <summary>Chamado a cada troca de janela em foco.</summary>
     public static void OnForeground(IntPtr h)
     {
