@@ -14,12 +14,24 @@ internal static class TaskbarController
 
     public static bool Enabled { get; private set; }
     static bool _shown;
+    static bool _attention;
+
+    /// <summary>
+    /// Algum programa pediu atenção (botão piscando, pedido de administrador...):
+    /// a barra fica visível até o pedido ser atendido — senão o aviso ficaria invisível.
+    /// </summary>
+    public static void SetAttention(bool on)
+    {
+        if (_attention == on) return;
+        _attention = on;
+        if (Enabled) SetVisible(on || _shown);
+    }
 
     public static void Enable()
     {
         Enabled = true;
         _shown = false;
-        SetVisible(false);
+        SetVisible(_attention); // se já houver um pedido de atenção pendente, a barra fica visível
     }
 
     public static void Disable()
@@ -35,8 +47,8 @@ internal static class TaskbarController
         // Ao minimizar a última janela, o Windows dá o foco à própria barra: isso não deve mostrá-la.
         // Ela só fica visível pela barra se já estava aberta por causa do Iniciar.
         bool want = IsStartOrSearch(h) || (_shown && IsTray(h));
-        if (want != _shown) { _shown = want; SetVisible(want); }
-        if (!want) EnforceSoon();
+        if (want != _shown) { _shown = want; SetVisible(want || _attention); }
+        if (!want && !_attention) EnforceSoon();
     }
 
     /// <summary>
@@ -58,7 +70,7 @@ internal static class TaskbarController
         if (!Enabled) return;
         IntPtr fg = Native.GetForegroundWindow();
         _shown = IsStartOrSearch(fg) || (_shown && IsTray(fg));
-        if (!_shown)
+        if (!_shown && !_attention)
             foreach (var t in Trays())
                 if (Native.IsWindowVisible(t)) Native.ShowWindow(t, Native.SW_HIDE);
     }

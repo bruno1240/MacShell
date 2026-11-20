@@ -39,6 +39,11 @@ public partial class DockWindow : Window
     int _refreshCount;
     List<string> _currentKeys = new();
     readonly DispatcherTimer _poll = new() { Interval = TimeSpan.FromMilliseconds(1200) };
+    // pedidos de atenção (botões piscando, pedido de administrador)
+    readonly HashSet<IntPtr> _attention = new();
+    bool _uacPending;
+    ShellHookWindow? _shellWindow;
+
     IntPtr _hook, _minHook, _locHook;
     Native.WinEventDelegate? _hookProc, _minHookProc, _locHookProc;
     uint _locPid;
@@ -129,6 +134,7 @@ public partial class DockWindow : Window
 
         _hookProc = (_, _, h, _, _, _, _) =>
         {
+            if (_attention.Remove(h)) Dispatcher.BeginInvoke(UpdateAttention); // atendeu o pedido
             TaskbarController.OnForeground(h);
             WatchLocationOf(h);
             QueueEvaluate();
@@ -143,6 +149,9 @@ public partial class DockWindow : Window
 
         TaskbarController.Enable();
         DesktopIcons.Hide();
+
+        // Mesmos avisos que a barra de tarefas recebe (ex.: programa piscando pedindo atenção).
+        _shellWindow = new ShellHookWindow(OnShellEvent);
         WatchLocationOf(Native.GetForegroundWindow());
         Evaluate();
     }
@@ -178,6 +187,7 @@ public partial class DockWindow : Window
         if (_hook != IntPtr.Zero) Native.UnhookWinEvent(_hook);
         if (_minHook != IntPtr.Zero) Native.UnhookWinEvent(_minHook);
         if (_locHook != IntPtr.Zero) Native.UnhookWinEvent(_locHook);
+        _shellWindow?.Dispose();
         DesktopIcons.Show();
         foreach (var h in _tuned) if (Native.IsWindow(h)) Native.RestoreNativeTransitions(h);
         TaskbarController.Disable();
@@ -225,7 +235,8 @@ public partial class DockWindow : Window
 
         Native.GetCursorPos(out var pt);
         bool atEdge = pt.Y >= sh - 2;
-        if (!covered || atEdge || _hovering || _dragging || _reordering || _menuOpen || _hideDelay.IsEnabled) SlideDock(false);
+        bool attention = _attention.Count > 0 || _uacPending;
+        if (!covered || atEdge || attention || _hovering || _dragging || _reordering || _menuOpen || _hideDelay.IsEnabled) SlideDock(false);
         else SlideDock(true);
     }
 
@@ -256,9 +267,11 @@ public partial class DockWindow : Window
         _edge.Top = sh - 2 / dpi;
     }
 
-    void SlideDock(bool hide)
+    double _lift; // quanto o dock sobe para não ficar atrás da barra de tarefas (quando ela aparece por um aviso)
+
+    void SlideDock(bool hide, bool force = false)
     {
-        if (hide == _dockHidden) return;
+        if (hide == _dockHidden && !force) return;
         _dockHidden = hide;
         if (hide)
         {
@@ -271,7 +284,7 @@ public partial class DockWindow : Window
         double dpi = VisualTreeHelper.GetDpi(this).DpiScaleX;
         int x = (int)Math.Round(Left * dpi);
         double from = double.IsNaN(_curYpx) ? Top * dpi : _curYpx;
-        double to = (hide ? _hiddenTop : _shownTop) * dpi;
+        double to = (hide ? _hiddenTop : _shownTop - _lift) * dpi;
         IntPtr hwnd = _hwnd;
         _slide.Run(hide ? 0.20 : 0.16, t =>
         {
@@ -474,8 +487,60 @@ public partial class DockWindow : Window
             if (!_views.TryGetValue(k, out var v) || v.Kind != ItemKind.App) continue;
             v.Windows = groups.TryGetValue(k, out var w) ? w : new List<IntPtr>();
             v.SetRunning(v.Windows.Count > 0);
-            if (v.Windows.Count > 0) v.StopBounce();
+            if (v.Windows.Count > 0 && !v.Attention) v.StopBounce();
         }
+
+        // Pedido de administrador esperando resposta (pode estar escondido atrás das janelas).
+        // (garantia extra: o aviso de "piscar" já chega na hora; aqui confere a cada ~6 s, custo ~3 ms)
+        if (_refreshCount % 5 == 1 || _uacPending)
+        {
+            var consent = System.Diagnostics.Process.GetProcessesByName("consent");
+            _uacPending = consent.Length > 0;
+            foreach (var c in consent) c.Dispose();
+        }
+        UpdateAttention();
+    }
+
+    void OnShellEvent(int code, IntPtr h)
+    {
+        if (code != Native.HSHELL_FLASH) return;
+        if (h != IntPtr.Zero && h != Native.GetForegroundWindow())
+        {
+            _attention.Add(h);
+            Dispatcher.BeginInvoke(UpdateAttention);
+        }
+    }
+
+    /// <summary>
+    /// Como no Mac: o ícone do app que pediu atenção fica pulando no dock, o dock aparece e a barra de
+    /// tarefas também (lá o botão piscando é clicável). Tudo volta ao normal quando o pedido é atendido.
+    /// </summary>
+    void UpdateAttention()
+    {
+        IntPtr fg = Native.GetForegroundWindow();
+        _attention.RemoveWhere(h => h == fg || !Native.IsWindow(h));
+
+        foreach (var v in _views.Values)
+        {
+            bool wants = v.Kind == ItemKind.App && v.Windows.Any(_attention.Contains);
+            if (wants && !v.Attention) { v.Attention = true; v.BounceForever(); }
+            else if (!wants && v.Attention) { v.Attention = false; v.StopBounce(); }
+        }
+
+        bool any = _attention.Count > 0 || _uacPending;
+        TaskbarController.SetAttention(any);
+
+        // Com a barra de tarefas visível, o dock sobe para ficar acima dela.
+        double lift = 0;
+        if (any)
+        {
+            IntPtr tray = Native.FindWindow("Shell_TrayWnd", null);
+            if (tray != IntPtr.Zero && Native.GetWindowRect(tray, out var tr))
+                lift = Math.Max(0, Native.GetSystemMetrics(1) - tr.Top) / VisualTreeHelper.GetDpi(this).DpiScaleY;
+        }
+        bool liftChanged = Math.Abs(lift - _lift) > 0.5;
+        _lift = lift;
+        if (any || liftChanged) SlideDock(false, force: liftChanged);
     }
 
     string? PathOf(uint pid)
@@ -1094,5 +1159,19 @@ internal sealed class DockItem : Grid
         if (!_bouncing) return;
         _bouncing = false;
         _bounce.BeginAnimation(TranslateTransform.YProperty, null);
+    }
+
+    /// <summary>App pedindo atenção: pula, pausa, pula... até ser aberto.</summary>
+    public bool Attention { get; set; }
+
+    public void BounceForever()
+    {
+        _bounce.BeginAnimation(TranslateTransform.YProperty, null);
+        _bouncing = true;
+        var a = new DoubleAnimationUsingKeyFrames { RepeatBehavior = RepeatBehavior.Forever };
+        a.KeyFrames.Add(new EasingDoubleKeyFrame(-26, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(240)), new QuadraticEase { EasingMode = EasingMode.EaseOut }));
+        a.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(480)), new BounceEase { Bounces = 1, Bounciness = 4, EasingMode = EasingMode.EaseOut }));
+        a.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(1300))));
+        _bounce.BeginAnimation(TranslateTransform.YProperty, a);
     }
 }
