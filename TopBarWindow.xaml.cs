@@ -43,6 +43,11 @@ public partial class TopBarWindow : Window
         NetworkChange.NetworkAddressChanged += (_, _) => Dispatcher.BeginInvoke(UpdateNetwork);
         NetworkChange.NetworkAvailabilityChanged += (_, _) => Dispatcher.BeginInvoke(UpdateNetwork);
         Theme.Changed += ApplyTheme;
+        // trocou o papel de parede: refaz o vidro
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += (_, e) =>
+        {
+            if (e.Category == Microsoft.Win32.UserPreferenceCategory.Desktop) Dispatcher.BeginInvoke(ApplyTheme);
+        };
     }
 
     void OnSourceInitialized(object? sender, EventArgs e)
@@ -103,9 +108,12 @@ public partial class TopBarWindow : Window
         bool light = Theme.IsLight;
         Foreground = Theme.Brush(light ? 0xFF1A1A1AU : 0xFFF5F5F7U);
         BottomLine.Background = Theme.Brush(light ? 0x1A000000U : 0x1AFFFFFFU);
-        // Acrílico real (desfoque do que está atrás) — mesmo efeito "vidro fosco" do macOS.
-        bool ok = Native.SetAcrylic(_hwnd, light ? 0xB0F2F2F2U : 0xA0201E1EU); // AABBGGRR
-        Root.Background = ok ? Theme.Brush(0x01000000) : Theme.Brush(light ? 0xF0F2F2F2U : 0xF0202020U);
+        // Vidro fosco: a faixa do papel de parede atrás da barra, desfocada (como no macOS).
+        // Sem efeitos do Windows por cima — eles escureciam a barra e travavam o redesenho.
+        double width = ActualWidth > 0 ? ActualWidth : SystemParameters.PrimaryScreenWidth;
+        Root.Background = WallpaperBackdrop.Build(width, BarHeight, light)
+                          ?? Theme.Brush(light ? 0xE6F2F2F2U : 0xE61E1E1EU);
+        Relayout();
     }
 
     // ------------------------------------------------------------ relógio (acorda 1x por minuto)

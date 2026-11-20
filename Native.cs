@@ -331,9 +331,11 @@ internal static class Native
         for (int i = keys.Length - 1; i >= 0; i--) keybd_event(keys[i], 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
     }
 
-    public static bool SetAcrylic(IntPtr h, uint abgr)
+    /// <param name="plainBlur">true = desfoque simples (cores do fundo aparecem, como no macOS);
+    /// false = acrílico do Windows (mais escuro, com camada de luminosidade).</param>
+    public static bool SetAcrylic(IntPtr h, uint abgr, bool plainBlur = false)
     {
-        var accent = new AccentPolicy { AccentState = 4 /* ACRYLICBLURBEHIND */, AccentFlags = 2, GradientColor = abgr };
+        var accent = new AccentPolicy { AccentState = plainBlur ? 3 /* BLURBEHIND */ : 4 /* ACRYLICBLURBEHIND */, AccentFlags = 2, GradientColor = abgr };
         int size = Marshal.SizeOf(accent);
         IntPtr p = Marshal.AllocHGlobal(size);
         try
